@@ -1,28 +1,35 @@
 require('dotenv').config();
 const express = require('express');
 const config = require('./config');
+const { createDatabase } = require('./db/database');
 const traceId = require('./middleware/traceId');
 const audit = require('./middleware/audit');
-const rejectDuplicateParams = require('./middleware/rejectDuplicateParams');
 const { errorHandler } = require('./middleware/errorHandler');
+const { createOrderRoutes } = require('./routes/orderRoutes');
 
-const app = express();
+function createApp({ db = createDatabase(config.dbPath) } = {}) {
+  const app = express();
 
-app.use(traceId);
-app.use(audit);
-app.use(express.json());
-app.use(rejectDuplicateParams);
+  app.disable('x-powered-by');
+  app.use(traceId);
+  app.use(audit);
+  app.use(express.json());
 
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' });
-});
+  app.get('/health', (_req, res) => {
+    res.json({ status: 'ok' });
+  });
 
-app.use(errorHandler);
+  app.use('/api/v1', createOrderRoutes(db));
+  app.use(errorHandler);
+
+  return app;
+}
 
 if (require.main === module) {
+  const app = createApp();
   app.listen(config.port, () => {
     console.log(`Order History API listening on port ${config.port}`);
   });
 }
 
-module.exports = app;
+module.exports = { createApp };
