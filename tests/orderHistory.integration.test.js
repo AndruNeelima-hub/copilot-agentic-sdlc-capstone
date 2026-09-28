@@ -23,6 +23,7 @@ describe('order history API', () => {
   async function send(requestBuilder) {
     const response = await requestBuilder;
     expect(response.headers['x-trace-id']).toBeTruthy();
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
     return response;
   }
 
@@ -141,6 +142,13 @@ describe('order history API', () => {
     expect(invalid.status).toBe(401);
     expect(missing.body.error.code).toBe('UNAUTHORIZED');
     expect(invalid.body.error.code).toBe('UNAUTHORIZED');
+  });
+
+  test('returns 401 when the JWT subject is not a UUID', async () => {
+    const response = await send(authorizedGet(USER_ID, makeToken('not-a-uuid')));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('UNAUTHORIZED');
   });
 
   test('returns a generic forbidden response for another user ID', async () => {
@@ -265,22 +273,66 @@ describe('order history API', () => {
         '404': expect.any(Object),
         '500': expect.any(Object)
       }));
+    expect(response.headers['content-security-policy']).toBeUndefined();
   });
 
-  test('emits audit records for unauthenticated requests without console output in Jest', async () => {
+  test.each([
+    ['200', USER_ID, () => authorizedGet()],
+    ['400', USER_ID, () => authorizedGet().query({ pageSize: 101 })],
+    ['401', USER_ID, () => authorizedGet(USER_ID, null)],
+    ['403', OTHER_USER_ID, () => authorizedGet(OTHER_USER_ID)],
+    ['404', '00000000-0000-4000-8000-000000000006', () => {
+      const userId = '00000000-0000-4000-8000-000000000006';
+      return authorizedGet(userId, makeToken(userId));
+    }]
+  ])('audits %s responses with versioned route and requested user ID', async (
+    statusCode,
+    requestedUserId,
+    createRequest
+  ) => {
     const auditRecord = new Promise((resolve) => app.once('audit', resolve));
-    const response = await send(authorizedGet(USER_ID, null));
+    const response = await send(createRequest());
     const record = await auditRecord;
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(Number(statusCode));
     expect(record).toMatchObject({
       method: 'GET',
-      route: '/users/:userId/orders',
-      statusCode: 401,
-      userId: null
+      route: '/api/v1/users/:userId/orders',
+      requestedUserId,
+      statusCode: Number(statusCode),
+      userId: statusCode === '401' ? null : statusCode === '404' ? requestedUserId : USER_ID
     });
     expect(record.traceId).toBe(response.headers['x-trace-id']);
     expect(record.timestamp).toBeTruthy();
     expect(record.durationMs).toEqual(expect.any(Number));
+    expect(JSON.stringify(record)).not.toContain(token);
+    expect(record).not.toHaveProperty('authorization');
+  });
+
+  test('audits unmatched versioned paths with the requested user ID', async () => {
+    const auditRecord = new Promise((resolve) => app.once('audit', resolve));
+    const response = await send(request(app)
+      .get(`/api/v1/users/${USER_ID}/unknown`)
+      .set('Authorization', `Bearer ${token}`));
+    const record = await auditRecord;
+
+    expect(response.status).toBe(404);
+    expect(record).toMatchObject({
+      route: `/api/v1/users/${USER_ID}/unknown`,
+      requestedUserId: USER_ID,
+      statusCode: 404
+    });
+  });
+
+  test('does not audit Swagger UI assets or favicon requests', async () => {
+    const auditRecords = [];
+    app.on('audit', auditRecords.push.bind(auditRecords));
+
+    await send(request(app).get('/api-docs'));
+    await send(request(app).get('/api-docs/swagger-ui-init.js'));
+    await send(request(app).get('/api-docs.json'));
+    await send(request(app).get('/favicon.ico'));
+
+    expect(auditRecords).toHaveLength(0);
   });
 });

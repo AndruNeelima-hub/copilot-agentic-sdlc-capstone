@@ -13,6 +13,10 @@ function createApp({ db = createDatabase(config.dbPath) } = {}) {
   const app = express();
 
   app.disable('x-powered-by');
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
   app.use(traceId);
   app.use(audit);
   app.use(express.json());

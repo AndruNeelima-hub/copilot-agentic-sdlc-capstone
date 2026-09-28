@@ -1,6 +1,9 @@
 const jwt = require('jsonwebtoken');
+const { z } = require('zod');
 const config = require('../config');
 const { AppError } = require('./errorHandler');
+
+const subjectSchema = z.string().uuid();
 
 function auth(req, res, next) {
   const authorization = req.get('Authorization');
@@ -19,8 +22,7 @@ function auth(req, res, next) {
     if (
       !claims ||
       typeof claims !== 'object' ||
-      typeof claims.sub !== 'string' ||
-      claims.sub.length === 0 ||
+      !subjectSchema.safeParse(claims.sub).success ||
       typeof claims.exp !== 'number' ||
       !Number.isFinite(claims.exp)
     ) {
