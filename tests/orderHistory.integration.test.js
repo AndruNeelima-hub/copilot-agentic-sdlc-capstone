@@ -245,4 +245,42 @@ describe('order history API', () => {
     expect(invalidUser.status).toBe(400);
     expect(invalidUser.body.error.code).toBe('INVALID_UUID');
   });
+
+  test('serves the public OpenAPI document with the order history contract', async () => {
+    const response = await send(request(app).get('/api-docs.json'));
+
+    expect(response.status).toBe(200);
+    expect(response.body.openapi).toMatch(/^3\./);
+    expect(response.body.paths['/api/v1/users/{userId}/orders'].get).toBeDefined();
+    expect(response.body.components.securitySchemes.bearerAuth).toMatchObject({
+      type: 'http',
+      scheme: 'bearer'
+    });
+    expect(response.body.paths['/api/v1/users/{userId}/orders'].get.responses)
+      .toEqual(expect.objectContaining({
+        '200': expect.any(Object),
+        '400': expect.any(Object),
+        '401': expect.any(Object),
+        '403': expect.any(Object),
+        '404': expect.any(Object),
+        '500': expect.any(Object)
+      }));
+  });
+
+  test('emits audit records for unauthenticated requests without console output in Jest', async () => {
+    const auditRecord = new Promise((resolve) => app.once('audit', resolve));
+    const response = await send(authorizedGet(USER_ID, null));
+    const record = await auditRecord;
+
+    expect(response.status).toBe(401);
+    expect(record).toMatchObject({
+      method: 'GET',
+      route: '/users/:userId/orders',
+      statusCode: 401,
+      userId: null
+    });
+    expect(record.traceId).toBe(response.headers['x-trace-id']);
+    expect(record.timestamp).toBeTruthy();
+    expect(record.durationMs).toEqual(expect.any(Number));
+  });
 });

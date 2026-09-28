@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
+const swaggerUi = require('swagger-ui-express');
 const config = require('./config');
+const openApiDocument = require('./openapi');
 const { createDatabase } = require('./db/database');
 const traceId = require('./middleware/traceId');
 const audit = require('./middleware/audit');
@@ -18,6 +20,11 @@ function createApp({ db = createDatabase(config.dbPath) } = {}) {
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
+
+  app.get('/api-docs.json', (_req, res) => {
+    res.json(openApiDocument);
+  });
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
   app.use('/api/v1', createOrderRoutes(db));
   app.use(errorHandler);
