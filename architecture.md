@@ -15,6 +15,11 @@
 
 Enterprise JWT features such as issuer/audience validation, key rotation, and managed key infrastructure are outside this capstone's scope.
 
+## Implementation deviations
+
+- **Money precision:** SQLite `REAL` storage is retained for this capstone, deviating from design-review sections 2.4 and 3.4, which recommend exact numeric storage. Monetary values are rounded to two decimal places in the response mapper. Integer minor units are future work if exact storage is required.
+- **Unknown query parameters:** Unknown query parameters are intentionally ignored; supported single-valued parameters are validated and rejected when duplicated.
+
 ## 2. Component Breakdown
 
 ```text

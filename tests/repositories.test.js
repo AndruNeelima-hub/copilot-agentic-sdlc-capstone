@@ -59,6 +59,20 @@ describe('repositories', () => {
     expect(userRepository.isAvailable(userRepository.findById(db, 'user-deleted'))).toBe(false);
   });
 
+  test('requires currency to be exactly three uppercase letters', () => {
+    const insertOrder = db.prepare(`
+      INSERT INTO orders (
+        id, user_id, order_number, order_date, status, subtotal, tax,
+        shipping, discount, total, currency
+      ) VALUES (?, 'user-1', ?, '2026-06-01T12:00:00.000Z', 'Pending', 0, 0, 0, 0, 0, ?)
+    `);
+
+    expect(() => insertOrder.run('currency-short', 'currency-short', 'US')).toThrow();
+    expect(() => insertOrder.run('currency-lower', 'currency-lower', 'usd')).toThrow();
+    expect(() => insertOrder.run('currency-long', 'currency-long', 'USDX')).toThrow();
+    expect(insertOrder.run('currency-valid', 'currency-valid', 'USD').changes).toBe(1);
+  });
+
   test('filters inclusively by UTC bounds and status, then sorts and paginates deterministically', () => {
     const filters = {
       userId: 'user-1',

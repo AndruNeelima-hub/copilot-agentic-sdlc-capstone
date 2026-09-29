@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping REAL NOT NULL CHECK (shipping >= 0),
   discount REAL NOT NULL CHECK (discount >= 0),
   total REAL NOT NULL CHECK (total >= 0),
-  currency TEXT(3) NOT NULL
+  currency TEXT(3) NOT NULL CHECK (currency GLOB '[A-Z][A-Z][A-Z]')
 );
 
 CREATE TABLE IF NOT EXISTS order_items (

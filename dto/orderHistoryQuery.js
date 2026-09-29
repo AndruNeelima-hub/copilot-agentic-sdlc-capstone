@@ -21,7 +21,7 @@ const dateSchema = z.string()
 const pageSchema = z.string()
   .regex(/^\d+$/)
   .transform(Number)
-  .pipe(z.number().int().min(1));
+  .pipe(z.number().int().min(1).max(1_000_000));
 
 const pageSizeSchema = z.string()
   .regex(/^\d+$/)
@@ -73,6 +73,10 @@ function validateOrderHistoryQuery(userId, query) {
   const values = parsedQuery.data;
   if (values.startDate && values.endDate && values.startDate > values.endDate) {
     throwValidationError('startDate');
+  }
+
+  if (!Number.isSafeInteger((values.page - 1) * values.pageSize)) {
+    throwValidationError('page');
   }
 
   return {

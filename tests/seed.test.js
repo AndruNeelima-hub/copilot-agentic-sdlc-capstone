@@ -26,6 +26,9 @@ describe('database seed', () => {
       { user_id: USER_IDS.largeHistory, count: 10000 }
     ]);
 
+    expect(db.prepare("SELECT count(*) AS count FROM orders WHERE currency NOT GLOB '[A-Z][A-Z][A-Z]'")
+      .get().count).toBe(0);
+
     const emptyOrderCount = db.prepare(`
       SELECT count(*) AS count
       FROM orders o

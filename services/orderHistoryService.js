@@ -3,14 +3,18 @@ const userRepository = require('../repositories/userRepository');
 const orderRepository = require('../repositories/orderRepository');
 const orderItemRepository = require('../repositories/orderItemRepository');
 
+function roundMoney(value) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function toItemDto(item) {
   return {
     itemId: item.id,
     productName: item.product_name,
     sku: item.sku,
     quantity: item.quantity,
-    unitPrice: item.unit_price,
-    lineTotal: item.line_total
+    unitPrice: roundMoney(item.unit_price),
+    lineTotal: roundMoney(item.line_total)
   };
 }
 
@@ -21,11 +25,11 @@ function toOrderDto(order, items) {
     date: order.order_date,
     status: order.status,
     items: (items.get(order.id) || []).map(toItemDto),
-    subtotal: order.subtotal,
-    tax: order.tax,
-    shipping: order.shipping,
-    discount: order.discount,
-    total: order.total,
+    subtotal: roundMoney(order.subtotal),
+    tax: roundMoney(order.tax),
+    shipping: roundMoney(order.shipping),
+    discount: roundMoney(order.discount),
+    total: roundMoney(order.total),
     currency: order.currency
   };
 }

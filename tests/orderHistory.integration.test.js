@@ -1,8 +1,10 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'integration-test-secret';
 
 const jwt = require('jsonwebtoken');
+const { performance } = require('node:perf_hooks');
 const request = require('supertest');
 const { createDatabase } = require('../db/database');
+const { USER_IDS, seedDatabase } = require('../db/seed');
 const { createApp } = require('../server');
 
 const USER_ID = '00000000-0000-4000-8000-000000000001';
@@ -116,6 +118,27 @@ describe('order history API', () => {
     expect(response.headers['x-powered-by']).toBeUndefined();
   });
 
+  test('rounds order and item money values to two decimal places', async () => {
+    db.prepare(`
+      UPDATE orders SET subtotal = 10.129, tax = 1.236, shipping = 2.005,
+        discount = 0.004, total = 13.374 WHERE id = ?
+    `).run('00000000-0000-4000-8000-000000000101');
+    db.prepare('UPDATE order_items SET unit_price = 5.678, line_total = 11.119 WHERE id = ?')
+      .run('00000000-0000-4000-8000-000000000201');
+
+    const response = await send(authorizedGet().query({ page: 3, pageSize: 2 }));
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.find((order) => order.orderId.endsWith('101'))).toMatchObject({
+      subtotal: 10.13,
+      tax: 1.24,
+      shipping: 2.01,
+      discount: 0,
+      total: 13.37,
+      items: [{ unitPrice: 5.68, lineTotal: 11.12 }]
+    });
+  });
+
   test('returns empty history with zero total pages', async () => {
     const response = await send(authorizedGet(EMPTY_USER_ID, makeToken(EMPTY_USER_ID)));
 
@@ -193,10 +216,16 @@ describe('order history API', () => {
 
   test.each([
     [{ pageSize: 101 }, 'INVALID_PAGINATION'],
+    [{ pageSize: 0 }, 'INVALID_PAGINATION'],
     [{ page: 0 }, 'INVALID_PAGINATION'],
+    [{ page: 'abc' }, 'INVALID_PAGINATION'],
+    [{ page: 1_000_001 }, 'INVALID_PAGINATION'],
     [{ status: 'Unknown' }, 'INVALID_STATUS'],
     [{ startDate: '2026-02-30' }, 'INVALID_DATE'],
+    [{ endDate: 'not-a-date' }, 'INVALID_DATE'],
     [{ sortBy: 'price' }, 'INVALID_SORT'],
+    [{ sortBy: 'invalid' }, 'INVALID_SORT'],
+    [{ sortOrder: 'up' }, 'INVALID_SORT'],
     [{ status: 'Pending', status2: 'ignored' }, null]
   ])('validates query %j', async (query, code) => {
     const response = await send(authorizedGet().query(query));
@@ -224,19 +253,71 @@ describe('order history API', () => {
       .toBe(true);
   });
 
-  test('rejects startDate after endDate and duplicate single-valued params', async () => {
+  test.each([
+    'Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Refunded', 'Returned'
+  ])('filters by the %s status', async (status) => {
+    db.prepare(`
+      INSERT INTO orders (
+        id, user_id, order_number, order_date, status, subtotal, tax,
+        shipping, discount, total, currency
+      ) VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 'USD')
+    `).run(`status-${status}`, USER_ID, `status-${status}`, '2026-09-29T12:00:00.000Z', status);
+
+    const response = await send(authorizedGet().query({ status }));
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.length).toBeGreaterThan(0);
+    expect(response.body.data.every((order) => order.status === status)).toBe(true);
+  });
+
+  test('rejects startDate after endDate', async () => {
     const invalidRange = await send(authorizedGet().query({
       startDate: '2026-09-29',
       endDate: '2026-09-28'
     }));
-    const duplicate = await send(request(app)
-      .get(`/api/v1/users/${USER_ID}/orders?status=Pending&status=Shipped`)
-      .set('Authorization', `Bearer ${token}`));
 
     expect(invalidRange.status).toBe(400);
     expect(invalidRange.body.error.code).toBe('INVALID_DATE');
-    expect(duplicate.status).toBe(400);
-    expect(duplicate.body.error.code).toBe('INVALID_STATUS');
+  });
+
+  test.each([
+    ['page', 'page=1&page=2', 'INVALID_PAGINATION'],
+    ['pageSize', 'pageSize=10&pageSize=20', 'INVALID_PAGINATION'],
+    ['status', 'status=Pending&status=Shipped', 'INVALID_STATUS'],
+    ['startDate', 'startDate=2026-09-01&startDate=2026-09-02', 'INVALID_DATE'],
+    ['endDate', 'endDate=2026-09-01&endDate=2026-09-02', 'INVALID_DATE'],
+    ['sortBy', 'sortBy=date&sortBy=total', 'INVALID_SORT'],
+    ['sortOrder', 'sortOrder=asc&sortOrder=desc', 'INVALID_SORT']
+  ])('rejects duplicated %s parameter', async (_parameter, query, errorCode) => {
+    const response = await send(request(app)
+      .get(`/api/v1/users/${USER_ID}/orders?${query}`)
+      .set('Authorization', `Bearer ${token}`));
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe(errorCode);
+  });
+
+  test('serves 100 seeded orders from a 10,000-order history within 500 ms', async () => {
+    seedDatabase(db);
+    const largeHistoryToken = makeToken(USER_IDS.largeHistory);
+    const largeHistoryRequest = () => request(app)
+      .get(`/api/v1/users/${USER_IDS.largeHistory}/orders?pageSize=100`)
+      .set('Authorization', `Bearer ${largeHistoryToken}`);
+
+    await send(largeHistoryRequest());
+    const startedAt = performance.now();
+    const response = await send(largeHistoryRequest());
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(100);
+    expect(response.body.metadata).toEqual({
+      totalRecords: 10000,
+      totalPages: 100,
+      currentPage: 1,
+      hasNextPage: true
+    });
+    expect(elapsedMs).toBeLessThan(500);
   });
 
   test('sorts by total in the requested direction', async () => {
