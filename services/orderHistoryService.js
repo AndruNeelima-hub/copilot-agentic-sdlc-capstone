@@ -1,4 +1,4 @@
-const { AppError } = require('../middleware/errorHandler');
+const { createAppError } = require('../middleware/errorHandler');
 const userRepository = require('../repositories/userRepository');
 const orderRepository = require('../repositories/orderRepository');
 const orderItemRepository = require('../repositories/orderItemRepository');
@@ -34,16 +34,33 @@ function toOrderDto(order, items) {
   };
 }
 
+function serializeOrderRows(orders, groupedItems) {
+  return orders.map((order) => toOrderDto(order, groupedItems));
+}
+
+function calculatePaginationMetadata(totalRecords, query) {
+  const totalPages = totalRecords === 0
+    ? 0
+    : Math.ceil(totalRecords / query.pageSize);
+
+  return {
+    totalRecords,
+    totalPages,
+    currentPage: query.page,
+    hasNextPage: query.page < totalPages
+  };
+}
+
 function createOrderHistoryService(db) {
   return {
     getOrderHistory(userId, authenticatedUserId, query) {
       if (authenticatedUserId !== userId) {
-        throw new AppError(403, 'FORBIDDEN', 'Access denied');
+        throw createAppError(403, 'FORBIDDEN', 'Access denied');
       }
 
       const user = userRepository.findById(db, userId);
       if (!userRepository.isAvailable(user)) {
-        throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+        throw createAppError(404, 'USER_NOT_FOUND', 'User not found');
       }
 
       const result = orderRepository.findOrdersWithCount(db, {
@@ -60,18 +77,10 @@ function createOrderHistoryService(db) {
         db,
         result.orders.map((order) => order.id)
       );
-      const totalPages = result.totalRecords === 0
-        ? 0
-        : Math.ceil(result.totalRecords / query.pageSize);
 
       return {
-        data: result.orders.map((order) => toOrderDto(order, groupedItems)),
-        metadata: {
-          totalRecords: result.totalRecords,
-          totalPages,
-          currentPage: query.page,
-          hasNextPage: query.page < totalPages
-        }
+        data: serializeOrderRows(result.orders, groupedItems),
+        metadata: calculatePaginationMetadata(result.totalRecords, query)
       };
     }
   };

@@ -1,18 +1,13 @@
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { createDatabase } = require('../db/database');
+const { createTestDatabase } = require('./helpers/testDb');
 const userRepository = require('../repositories/userRepository');
 const orderRepository = require('../repositories/orderRepository');
 const orderItemRepository = require('../repositories/orderItemRepository');
 
 describe('repositories', () => {
-  let directory;
   let db;
 
   beforeEach(() => {
-    directory = fs.mkdtempSync(path.join(os.tmpdir(), 'order-history-repositories-'));
-    db = createDatabase(path.join(directory, 'test.sqlite'));
+    db = createTestDatabase({ seed: false });
     db.prepare('INSERT INTO users (id, status) VALUES (?, ?)').run('user-1', 'active');
     db.prepare('INSERT INTO users (id, status) VALUES (?, ?)').run('user-2', 'active');
 
@@ -44,7 +39,6 @@ describe('repositories', () => {
 
   afterEach(() => {
     db.close();
-    fs.rmSync(directory, { recursive: true, force: true });
   });
 
   test('finds users and excludes disabled or soft-deleted users', () => {

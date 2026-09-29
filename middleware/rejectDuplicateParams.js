@@ -1,4 +1,4 @@
-const { AppError } = require('./errorHandler');
+const { createAppError } = require('./errorHandler');
 
 const SINGLE_VALUE_PARAMS = new Map([
   ['page', 'INVALID_PAGINATION'],
@@ -15,7 +15,7 @@ function rejectDuplicateParams(req, res, next) {
 
   for (const [parameter, errorCode] of SINGLE_VALUE_PARAMS) {
     if (requestUrl.searchParams.getAll(parameter).length > 1) {
-      next(new AppError(400, errorCode, 'Query parameter must appear at most once'));
+      next(createAppError(400, errorCode, 'Query parameter must appear at most once'));
       return;
     }
   }

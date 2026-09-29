@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { AppError } = require('../middleware/errorHandler');
+const { createAppError } = require('../middleware/errorHandler');
 
 const STATUSES = [
   'Pending',
@@ -56,40 +56,57 @@ function throwValidationError(field) {
     INVALID_SORT: 'sortBy and sortOrder are not supported'
   };
 
-  throw new AppError(400, code, messages[code]);
+  throw createAppError(400, code, messages[code]);
 }
 
-function validateOrderHistoryQuery(userId, query) {
+function validateUserId(userId) {
   const parsedUserId = z.string().uuid().safeParse(userId);
   if (!parsedUserId.success) {
     throwValidationError('userId');
   }
 
+  return parsedUserId.data;
+}
+
+function parseQueryValues(query) {
   const parsedQuery = querySchema.safeParse(query);
   if (!parsedQuery.success) {
     throwValidationError(parsedQuery.error.issues[0].path[0]);
   }
 
   const values = parsedQuery.data;
-  if (values.startDate && values.endDate && values.startDate > values.endDate) {
-    throwValidationError('startDate');
-  }
-
   if (!Number.isSafeInteger((values.page - 1) * values.pageSize)) {
     throwValidationError('page');
   }
 
+  return values;
+}
+
+function normalizeDateRange(values) {
+  if (values.startDate && values.endDate && values.startDate > values.endDate) {
+    throwValidationError('startDate');
+  }
+
   return {
-    userId: parsedUserId.data,
-    page: values.page,
-    pageSize: values.pageSize,
-    status: values.status ?? null,
     startTimestampUtc: values.startDate
       ? `${values.startDate}T00:00:00.000Z`
       : null,
     endTimestampUtc: values.endDate
       ? `${values.endDate}T23:59:59.999Z`
       : null,
+  };
+}
+
+function validateOrderHistoryQuery(userId, query) {
+  const parsedUserId = validateUserId(userId);
+  const values = parseQueryValues(query);
+
+  return {
+    userId: parsedUserId,
+    page: values.page,
+    pageSize: values.pageSize,
+    status: values.status ?? null,
+    ...normalizeDateRange(values),
     sortBy: values.sortBy,
     sortOrder: values.sortOrder
   };

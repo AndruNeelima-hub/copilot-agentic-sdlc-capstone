@@ -19,6 +19,10 @@ class AppError extends Error {
   }
 }
 
+function createAppError(statusCode, code, message) {
+  return new AppError(statusCode, code, message);
+}
+
 function errorHandler(err, req, res, next) {
   if (res.headersSent) {
     next(err);
@@ -39,4 +43,4 @@ function errorHandler(err, req, res, next) {
   });
 }
 
-module.exports = { AppError, errorHandler };
+module.exports = { AppError, createAppError, errorHandler };

@@ -3,9 +3,9 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'integration-test-secret';
 const jwt = require('jsonwebtoken');
 const { performance } = require('node:perf_hooks');
 const request = require('supertest');
-const { createDatabase } = require('../db/database');
-const { USER_IDS, seedDatabase } = require('../db/seed');
+const { USER_IDS } = require('../db/seed');
 const { createApp } = require('../server');
+const { createTestDatabase } = require('./helpers/testDb');
 
 const USER_ID = '00000000-0000-4000-8000-000000000001';
 const EMPTY_USER_ID = '00000000-0000-4000-8000-000000000002';
@@ -35,7 +35,7 @@ describe('order history API', () => {
   }
 
   beforeEach(() => {
-    db = createDatabase(':memory:');
+    db = createTestDatabase({ seed: false });
     app = createApp({ db });
 
     const insertUser = db.prepare(
@@ -298,26 +298,31 @@ describe('order history API', () => {
   });
 
   test('serves 100 seeded orders from a 10,000-order history within 500 ms', async () => {
-    seedDatabase(db);
+    const seededDb = createTestDatabase();
+    const seededApp = createApp({ db: seededDb });
     const largeHistoryToken = makeToken(USER_IDS.largeHistory);
-    const largeHistoryRequest = () => request(app)
+    const largeHistoryRequest = () => request(seededApp)
       .get(`/api/v1/users/${USER_IDS.largeHistory}/orders?pageSize=100`)
       .set('Authorization', `Bearer ${largeHistoryToken}`);
 
-    await send(largeHistoryRequest());
-    const startedAt = performance.now();
-    const response = await send(largeHistoryRequest());
-    const elapsedMs = performance.now() - startedAt;
+    try {
+      await send(largeHistoryRequest());
+      const startedAt = performance.now();
+      const response = await send(largeHistoryRequest());
+      const elapsedMs = performance.now() - startedAt;
 
-    expect(response.status).toBe(200);
-    expect(response.body.data).toHaveLength(100);
-    expect(response.body.metadata).toEqual({
-      totalRecords: 10000,
-      totalPages: 100,
-      currentPage: 1,
-      hasNextPage: true
-    });
-    expect(elapsedMs).toBeLessThan(500);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveLength(100);
+      expect(response.body.metadata).toEqual({
+        totalRecords: 10000,
+        totalPages: 100,
+        currentPage: 1,
+        hasNextPage: true
+      });
+      expect(elapsedMs).toBeLessThan(500);
+    } finally {
+      seededDb.close();
+    }
   });
 
   test('sorts by total in the requested direction', async () => {

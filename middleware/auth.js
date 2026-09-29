@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const config = require('../config');
-const { AppError } = require('./errorHandler');
+const { createAppError } = require('./errorHandler');
 
 const subjectSchema = z.string().uuid();
 
@@ -10,7 +10,7 @@ function auth(req, res, next) {
   const bearerMatch = authorization && authorization.match(/^Bearer\s+(\S+)$/i);
 
   if (!bearerMatch) {
-    next(new AppError(401, 'UNAUTHORIZED', 'Authentication is required'));
+    next(createAppError(401, 'UNAUTHORIZED', 'Authentication is required'));
     return;
   }
 
@@ -32,7 +32,7 @@ function auth(req, res, next) {
     req.userId = claims.sub;
     next();
   } catch (_error) {
-    next(new AppError(401, 'UNAUTHORIZED', 'Authentication is required'));
+    next(createAppError(401, 'UNAUTHORIZED', 'Authentication is required'));
   }
 }
 

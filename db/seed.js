@@ -9,6 +9,25 @@ const USER_IDS = Object.freeze({
   largeHistory: '00000000-0000-4000-8000-000000000005'
 });
 
+const ORDER_SEEDS = Object.freeze({
+  history: Object.freeze({
+    prefix: '10000000',
+    itemPrefix: '30000000',
+    userId: USER_IDS.history,
+    orderCount: 70,
+    emptyOrderIndex: 70,
+    itemCountOffset: 0
+  }),
+  largeHistory: Object.freeze({
+    prefix: '20000000',
+    itemPrefix: '40000000',
+    userId: USER_IDS.largeHistory,
+    orderCount: 10000,
+    emptyOrderIndex: 10000,
+    itemCountOffset: 2
+  })
+});
+
 const STATUSES = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Refunded', 'Returned'];
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'JPY'];
 const PRODUCTS = [
@@ -27,13 +46,26 @@ function generatedId(prefix, number) {
   return `${prefix}-0000-4000-8000-${String(number).padStart(12, '0')}`;
 }
 
+function findOrderSeed(prefix) {
+  return Object.values(ORDER_SEEDS).find((seed) => seed.prefix === prefix);
+}
+
+function shouldCreateEmptyOrder(prefix, index) {
+  return findOrderSeed(prefix)?.emptyOrderIndex === index;
+}
+
+function resolveItemCount(prefix, index) {
+  if (shouldCreateEmptyOrder(prefix, index)) return 0;
+
+  const itemCountOffset = findOrderSeed(prefix)?.itemCountOffset || 0;
+  return 1 + ((index + itemCountOffset) % 4);
+}
+
 function createOrder(insertOrder, insertItem, { prefix, itemPrefix, index, userId }) {
   const day = index % 365;
   const orderDate = new Date(BASE_DATE + day * 24 * 60 * 60 * 1000 + (index % 24) * 60 * 60 * 1000)
     .toISOString();
-  const hasNoItems = (prefix === '10000000' && index === 70)
-    || (prefix === '20000000' && index === 10000);
-  const itemCount = hasNoItems ? 0 : 1 + ((index + (prefix === '20000000' ? 2 : 0)) % 4);
+  const itemCount = resolveItemCount(prefix, index);
   const items = [];
   let subtotalCents = 0;
 
@@ -135,16 +167,13 @@ function seedDatabase(db) {
       )
     `).run();
 
-    for (let index = 1; index <= 70; index += 1) {
-      createOrder(insertOrder, insertItem, {
-        prefix: '10000000', itemPrefix: '30000000', index, userId: USER_IDS.history
-      });
-    }
-
-    for (let index = 1; index <= 10000; index += 1) {
-      createOrder(insertOrder, insertItem, {
-        prefix: '20000000', itemPrefix: '40000000', index, userId: USER_IDS.largeHistory
-      });
+    for (const seedConfig of Object.values(ORDER_SEEDS)) {
+      for (let index = 1; index <= seedConfig.orderCount; index += 1) {
+        createOrder(insertOrder, insertItem, {
+          ...seedConfig,
+          index
+        });
+      }
     }
   });
 
