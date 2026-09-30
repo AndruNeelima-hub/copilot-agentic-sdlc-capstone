@@ -58,3 +58,11 @@ Test count grew from 29 to 36 to 59 passing tests across these fixes, all in `te
 ## 5. Final Test Status
 
 59 / 59 tests passing across 3 suites (`repositories.test.js`, `orderHistory.integration.test.js`, `seed.test.js`), including full coverage of acceptance criteria AC-1 through AC-18 from `requirements.md`.
+## 6. Follow-up Copilot Review (Agent mode)
+
+A final Copilot Chat (Agent mode) pass was run against the 7-area checklist on the current branch.
+
+- Copilot ran `npm test -- --runInBand`: 3 suites, 59 tests passed, 0 failed
+- No new blocking findings; earlier findings are already recorded in this document
+- Copilot noted it did not run `npm audit`, so it was run separately: **found 0 vulnerabilities**
+- Copilot's first comparison against baseline summarised only the latest commit (2 files). It was corrected by comparing against the initial commit (`83d4535`), which shows the full change set and matches the PR's "Changes Made" section.
